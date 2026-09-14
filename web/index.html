@@ -3,448 +3,698 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Automatic Pet Feeder</title>
+  <title>Pet Feeder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
+    :root {
+      --bg: #0c0f14;
+      --surface: #15191f;
+      --surface-2: #1c2230;
+      --border: #262d3d;
+      --text: #e8ecf4;
+      --text-muted: #6b7a99;
+      --accent: #3b82f6;
+      --accent-dim: rgba(59, 130, 246, 0.12);
+      --green: #22c55e;
+      --green-dim: rgba(34, 197, 94, 0.12);
+      --amber: #f59e0b;
+      --amber-dim: rgba(245, 158, 11, 0.12);
+      --red: #ef4444;
+      --red-dim: rgba(239, 68, 68, 0.1);
+      --radius: 14px;
+    }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      background: #0f172a;
-      color: #e2e8f0;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
       min-height: 100vh;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .app {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 32px 20px 60px;
+    }
+
+    /* ---- HEADER ---- */
+    .header {
       display: flex;
-      flex-direction: column;
       align-items: center;
-      padding: 16px;
+      justify-content: space-between;
+      margin-bottom: 36px;
     }
 
-    h1 { font-size: 1.5rem; margin-bottom: 4px; color: #38bdf8; }
-    .subtitle { color: #64748b; margin-bottom: 20px; font-size: 0.8rem; }
-
-    .grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      max-width: 700px;
-      width: 100%;
+    .header-left h1 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
     }
 
-    .card {
-      background: #1e293b;
-      border-radius: 12px;
-      padding: 16px;
-      border: 1px solid #334155;
+    .header-left p {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 2px;
     }
 
-    .card h2 {
+    .conn-dot {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    .conn-dot::before {
+      content: '';
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--red);
+      transition: background 0.3s;
+    }
+
+    .conn-dot.on::before { background: var(--green); }
+
+    /* ---- HERO ---- */
+    .hero {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 40px 32px;
+      text-align: center;
+      margin-bottom: 16px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--accent), var(--green));
+      opacity: 0.7;
+    }
+
+    .hero-label {
       font-size: 0.7rem;
+      font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 1px;
-      color: #64748b;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
       margin-bottom: 8px;
     }
 
-    .distance-display {
-      font-size: 2.8rem;
-      font-weight: 700;
-      text-align: center;
-      padding: 4px 0;
+    .hero-distance {
+      font-size: 4.5rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1;
       transition: color 0.3s;
     }
 
-    .distance-display.near { color: #22c55e; }
-    .distance-display.far  { color: #ef4444; }
-    .distance-display.medium { color: #fbbf24; }
+    .hero-distance.near { color: var(--green); }
+    .hero-distance.medium { color: var(--amber); }
+    .hero-distance.far { color: var(--text-muted); }
 
-    .distance-unit { font-size: 0.8rem; color: #64748b; text-align: center; }
-
-    .status-badge {
-      display: inline-block;
-      padding: 4px 12px;
-      border-radius: 16px;
-      font-weight: 600;
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 1px;
+    .hero-unit {
+      font-size: 1rem;
+      color: var(--text-muted);
+      font-weight: 500;
+      margin-top: 4px;
     }
 
-    .status-badge.feeding { background: #166534; color: #4ade80; animation: pulse 1.5s infinite; }
-    .status-badge.idle { background: #1e3a5f; color: #38bdf8; }
-    .status-badge.waiting { background: #422006; color: #fbbf24; }
-
-    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
-
-    .pet-visual {
-      width: 60px; height: 60px;
-      margin: 10px auto;
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 1.8rem;
+    .hero-zone {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 16px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: var(--surface-2);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
       transition: all 0.3s;
     }
 
-    .pet-visual.zone1 { background: rgba(34, 197, 94, 0.15); box-shadow: 0 0 20px rgba(34, 197, 94, 0.2); }
-    .pet-visual.zone2 { background: rgba(251, 191, 36, 0.15); box-shadow: 0 0 20px rgba(251, 191, 36, 0.2); }
-    .pet-visual.far { background: rgba(239, 68, 68, 0.1); }
+    .hero-zone.z1 {
+      background: var(--green-dim);
+      color: var(--green);
+      border-color: rgba(34, 197, 94, 0.2);
+    }
 
-    .zone-label { text-align: center; font-size: 0.75rem; color: #64748b; }
+    .hero-zone.z2 {
+      background: var(--amber-dim);
+      color: var(--amber);
+      border-color: rgba(245, 158, 11, 0.2);
+    }
 
-    .btn-feed {
-      width: 100%; padding: 12px;
-      border: none; border-radius: 10px;
-      font-size: 0.95rem; font-weight: 600;
-      cursor: pointer; transition: all 0.2s;
+    .hero-zone .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* ---- GRID ---- */
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+    }
+
+    .card-title {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+
+    /* ---- STATUS ---- */
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .status-pill.feeding {
+      background: var(--green-dim);
+      color: var(--green);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    .status-pill.idle {
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+
+    .status-pill.waiting {
+      background: var(--amber-dim);
+      color: var(--amber);
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .status-pill .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .last-feed-text {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .zone-bars {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .zone-bar {
+      flex: 1;
+      text-align: center;
+      padding: 10px 8px;
+      border-radius: 10px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+    }
+
+    .zone-bar .label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .zone-bar .value {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+
+    .zone-bar.z1 .value { color: var(--green); }
+    .zone-bar.z2 .value { color: var(--amber); }
+
+    .btn {
+      width: 100%;
+      padding: 11px 16px;
+      border: none;
+      border-radius: 10px;
+      font-family: inherit;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease-out;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn-primary:hover { background: #2563eb; }
+
+    .btn-danger {
+      background: var(--red);
+      color: #fff;
+    }
+
+    .btn-danger:hover { background: #dc2626; }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
       margin-top: 8px;
     }
 
-    .btn-feed.feed { background: #22c55e; color: #000; }
-    .btn-feed.feed:hover { background: #16a34a; }
-    .btn-feed.stop { background: #ef4444; color: #fff; }
-    .btn-feed.stop:hover { background: #dc2626; }
-
-    .btn-csv {
-      width: 100%; padding: 8px;
-      border: 1px solid #334155; border-radius: 8px;
-      background: transparent; color: #38bdf8;
-      font-size: 0.8rem; cursor: pointer;
-      margin-top: 8px; transition: all 0.2s;
-    }
-    .btn-csv:hover { background: #1e3a5f; }
-
-    .slider-group { margin-bottom: 12px; }
-
-    .slider-label {
-      display: flex; justify-content: space-between;
-      font-size: 0.75rem; color: #94a3b8;
-      margin-bottom: 4px;
+    .btn-ghost:hover {
+      background: var(--surface-2);
+      color: var(--text);
     }
 
-    .slider-label span:last-child { color: #38bdf8; font-weight: 600; }
+    /* ---- SETTINGS ---- */
+    .setting {
+      margin-bottom: 18px;
+    }
+
+    .setting:last-child { margin-bottom: 0; }
+
+    .setting-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+
+    .setting-label {
+      font-size: 0.8rem;
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .setting-value {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+    }
 
     input[type="range"] {
-      width: 100%; height: 6px;
-      -webkit-appearance: none; appearance: none;
-      background: #334155; border-radius: 3px;
+      width: 100%;
+      height: 4px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: var(--border);
+      border-radius: 2px;
       outline: none;
     }
 
     input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none; appearance: none;
-      width: 16px; height: 16px;
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
       border-radius: 50%;
-      background: #38bdf8; cursor: pointer;
+      background: var(--accent);
+      cursor: pointer;
+      border: 2px solid var(--bg);
+      box-shadow: 0 0 0 1px var(--accent);
     }
 
-    .chart-card { grid-column: 1 / -1; }
-    .chart-container { position: relative; height: 120px; margin-top: 8px; }
-    canvas { width: 100% !important; height: 100% !important; }
+    /* ---- CHART ---- */
+    .chart-full { grid-column: 1 / -1; }
 
-    .last-feed { font-size: 0.75rem; color: #64748b; margin-top: 8px; }
-
-    .connection-status {
-      position: fixed; top: 8px; right: 8px;
-      padding: 3px 8px; border-radius: 6px;
-      font-size: 0.7rem; font-weight: 600;
-    }
-    .connection-status.connected { background: #166534; color: #4ade80; }
-    .connection-status.disconnected { background: #7f1d1d; color: #fca5a5; }
-
-    .zones-info {
-      display: grid; grid-template-columns: 1fr 1fr;
-      gap: 6px; margin-top: 8px;
+    .chart-wrap {
+      position: relative;
+      height: 160px;
+      margin-top: 4px;
     }
 
-    .zone-box {
-      text-align: center; padding: 6px;
-      border-radius: 8px; font-size: 0.7rem;
+    canvas {
+      width: 100% !important;
+      height: 100% !important;
     }
-
-    .zone-box.z1 { background: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e33; }
-    .zone-box.z2 { background: rgba(251, 191, 36, 0.1); border: 1px solid #fbbf2433; }
-    .zone-box .zone-dist { font-size: 1.1rem; font-weight: 700; }
-    .zone-box.z1 .zone-dist { color: #22c55e; }
-    .zone-box.z2 .zone-dist { color: #fbbf24; }
 
     /* ---- MOBILE ---- */
-    @media (max-width: 480px) {
+    @media (max-width: 600px) {
+      .app { padding: 20px 14px 40px; }
       .grid { grid-template-columns: 1fr; }
-      .chart-card { grid-column: 1; }
-      h1 { font-size: 1.3rem; }
-      .distance-display { font-size: 2.2rem; }
-      body { padding: 10px; }
+      .chart-full { grid-column: 1; }
+      .hero { padding: 28px 20px; }
+      .hero-distance { font-size: 3.2rem; }
+      .header-left h1 { font-size: 1.15rem; }
     }
   </style>
 </head>
 <body>
 
-  <div class="connection-status" id="connStatus">Connecting...</div>
+<div class="app">
 
-  <h1>Automatic Pet Feeder</h1>
-  <p class="subtitle">Distance-triggered feeding with multi-zone portions</p>
+  <div class="header">
+    <div class="header-left">
+      <h1>Pet Feeder</h1>
+      <p>Distance-triggered feeding with multi-zone portions</p>
+    </div>
+    <div class="conn-dot" id="connStatus">Connecting</div>
+  </div>
+
+  <!-- Hero: Distance -->
+  <div class="hero">
+    <div class="hero-label">Sensor Distance</div>
+    <div class="hero-distance far" id="distanceDisplay">--</div>
+    <div class="hero-unit">centimeters</div>
+    <div class="hero-zone" id="heroZone">
+      <span class="dot"></span>
+      <span id="zoneText">No pet detected</span>
+    </div>
+  </div>
 
   <div class="grid">
-    <!-- Distance Card -->
-    <div class="card">
-      <h2>Sensor Distance</h2>
-      <div class="distance-display" id="distanceDisplay">--</div>
-      <div class="distance-unit">centimeters</div>
-      <div class="pet-visual far" id="petVisual">--</div>
-      <div class="zone-label" id="zoneLabel">No pet detected</div>
-    </div>
 
-    <!-- Status Card -->
+    <!-- Status -->
     <div class="card">
-      <h2>Feeder Status</h2>
-      <div style="text-align:center; padding: 12px 0;">
-        <span class="status-badge waiting" id="statusBadge">WAITING</span>
+      <div class="card-title">Feeder Status</div>
+      <div class="status-row">
+        <span class="status-pill waiting" id="statusBadge">
+          <span class="dot"></span>
+          <span id="statusText">WAITING</span>
+        </span>
       </div>
-      <div class="last-feed" id="lastFeed">Last feed: Never</div>
-      <div class="zones-info">
-        <div class="zone-box z1">
-          <div>Full portion</div>
-          <div class="zone-dist" id="zone1Display">15cm</div>
+      <div class="last-feed-text" id="lastFeed">Last feed: never</div>
+
+      <div class="zone-bars" style="margin-top: 16px;">
+        <div class="zone-bar z1">
+          <div class="label">Full</div>
+          <div class="value" id="zone1Display">15cm</div>
         </div>
-        <div class="zone-box z2">
-          <div>Half portion</div>
-          <div class="zone-dist" id="zone2Display">30cm</div>
+        <div class="zone-bar z2">
+          <div class="label">Half</div>
+          <div class="value" id="zone2Display">30cm</div>
         </div>
       </div>
-      <button class="btn-feed feed" id="feedBtn" onclick="manualFeed()">Manual Feed</button>
-      <button class="btn-csv" onclick="downloadCSV()">Download CSV Log</button>
+
+      <button class="btn btn-primary" id="feedBtn" onclick="manualFeed()">Manual Feed</button>
+      <button class="btn btn-ghost" onclick="downloadCSV()">Download CSV Log</button>
     </div>
 
-    <!-- Settings Card -->
+    <!-- Settings -->
     <div class="card">
-      <h2>Settings</h2>
+      <div class="card-title">Settings</div>
 
-      <div class="slider-group">
-        <div class="slider-label">
-          <span>Detection Threshold</span>
-          <span id="thresholdVal">20 cm</span>
+      <div class="setting">
+        <div class="setting-head">
+          <span class="setting-label">Detection Threshold</span>
+          <span class="setting-value" id="thresholdVal">20 cm</span>
         </div>
         <input type="range" id="thresholdSlider" min="5" max="60" value="20"
                oninput="updateThreshold(this.value)">
       </div>
 
-      <div class="slider-group">
-        <div class="slider-label">
-          <span>Cooldown Between Feeds</span>
-          <span id="cooldownVal">15 sec</span>
+      <div class="setting">
+        <div class="setting-head">
+          <span class="setting-label">Cooldown</span>
+          <span class="setting-value" id="cooldownVal">15 sec</span>
         </div>
         <input type="range" id="cooldownSlider" min="5" max="120" value="15"
                oninput="updateCooldown(this.value)">
       </div>
 
-      <div class="slider-group">
-        <div class="slider-label">
-          <span>Zone 1 Range (Full)</span>
-          <span id="zone1Val">15 cm</span>
+      <div class="setting">
+        <div class="setting-head">
+          <span class="setting-label">Zone 1 (Full Portion)</span>
+          <span class="setting-value" id="zone1Val">15 cm</span>
         </div>
         <input type="range" id="zone1Slider" min="5" max="40" value="15"
                oninput="updateZone1(this.value)">
       </div>
 
-      <div class="slider-group">
-        <div class="slider-label">
-          <span>Zone 2 Range (Half)</span>
-          <span id="zone2Val">30 cm</span>
+      <div class="setting">
+        <div class="setting-head">
+          <span class="setting-label">Zone 2 (Half Portion)</span>
+          <span class="setting-value" id="zone2Val">30 cm</span>
         </div>
         <input type="range" id="zone2Slider" min="15" max="60" value="30"
                oninput="updateZone2(this.value)">
       </div>
     </div>
 
-    <!-- Chart Card -->
-    <div class="card chart-card">
-      <h2>Distance History</h2>
-      <div class="chart-container">
+    <!-- Chart -->
+    <div class="card chart-full">
+      <div class="card-title">Distance History</div>
+      <div class="chart-wrap">
         <canvas id="chart"></canvas>
       </div>
     </div>
+
   </div>
+</div>
 
-  <script>
-    const API = '';
-    const DETECT_THRESHOLD = 20;
-    let chartData = [];
-    let connected = false;
+<script>
+  const API = '';
+  let chartData = [];
+  let connected = false;
 
-    const distanceDisplay = document.getElementById('distanceDisplay');
-    const petVisual = document.getElementById('petVisual');
-    const zoneLabel = document.getElementById('zoneLabel');
-    const statusBadge = document.getElementById('statusBadge');
-    const lastFeed = document.getElementById('lastFeed');
-    const feedBtn = document.getElementById('feedBtn');
-    const connStatus = document.getElementById('connStatus');
-    const canvas = document.getElementById('chart');
-    const ctx = canvas.getContext('2d');
+  const distanceDisplay = document.getElementById('distanceDisplay');
+  const heroZone = document.getElementById('heroZone');
+  const zoneText = document.getElementById('zoneText');
+  const statusBadge = document.getElementById('statusBadge');
+  const statusText = document.getElementById('statusText');
+  const lastFeed = document.getElementById('lastFeed');
+  const feedBtn = document.getElementById('feedBtn');
+  const connStatus = document.getElementById('connStatus');
+  const canvas = document.getElementById('chart');
+  const ctx = canvas.getContext('2d');
 
-    async function fetchStatus() {
-      try {
-        const res = await fetch(`${API}/api/status`);
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
-        updateUI(data);
-        setConnected(true);
-      } catch (e) {
-        setConnected(false);
-      }
+  async function fetchStatus() {
+    try {
+      const res = await fetch(`${API}/api/status`);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      updateUI(data);
+      setConnected(true);
+    } catch (e) {
+      setConnected(false);
+    }
+  }
+
+  function updateUI(data) {
+    const dist = data.distance;
+    const zone = data.zone;
+
+    // Distance
+    distanceDisplay.textContent = dist.toFixed(1);
+    if (dist > 0 && dist < data.threshold) {
+      distanceDisplay.className = 'hero-distance near';
+    } else if (dist < data.threshold * 1.5) {
+      distanceDisplay.className = 'hero-distance medium';
+    } else {
+      distanceDisplay.className = 'hero-distance far';
     }
 
-    function updateUI(data) {
-      const dist = data.distance;
-      const zone = data.zone;
-      const feeding = data.feeding;
-
-      // Distance
-      distanceDisplay.textContent = dist.toFixed(1);
-      if (dist > 0 && dist < data.threshold) {
-        distanceDisplay.className = 'distance-display near';
-      } else if (dist < data.threshold * 1.5) {
-        distanceDisplay.className = 'distance-display medium';
-      } else {
-        distanceDisplay.className = 'distance-display far';
-      }
-
-      // Pet visual
-      if (zone === 1) {
-        petVisual.className = 'pet-visual zone1';
-        petVisual.innerHTML = 'CAT';
-        zoneLabel.textContent = 'Very close - Full portion (90)';
-      } else if (zone === 2) {
-        petVisual.className = 'pet-visual zone2';
-        petVisual.innerHTML = 'CAT';
-        zoneLabel.textContent = 'Medium close - Half portion (45)';
-      } else {
-        petVisual.className = 'pet-visual far';
-        petVisual.innerHTML = '--';
-        zoneLabel.textContent = 'No pet detected';
-      }
-
-      // Status
-      statusBadge.className = 'status-badge ' + data.status;
-      statusBadge.textContent = data.status.toUpperCase();
-
-      // Feed button
-      if (feeding) {
-        feedBtn.className = 'btn-feed stop';
-        feedBtn.textContent = 'Stop Feeding';
-        feedBtn.onclick = stopFeed;
-      } else {
-        feedBtn.className = 'btn-feed feed';
-        feedBtn.textContent = 'Manual Feed';
-        feedBtn.onclick = manualFeed;
-      }
-
-      // Last feed
-      if (data.last_feed) {
-        const ago = Math.floor((Date.now() / 1000) - data.last_feed);
-        lastFeed.textContent = `Last feed: ${ago}s ago`;
-      }
-
-      // Update sliders to match Arduino state
-      document.getElementById('thresholdSlider').value = data.threshold;
-      document.getElementById('thresholdVal').textContent = data.threshold + ' cm';
-      document.getElementById('cooldownSlider').value = data.cooldown;
-      document.getElementById('cooldownVal').textContent = data.cooldown + ' sec';
-      document.getElementById('zone1Slider').value = data.zone1;
-      document.getElementById('zone1Val').textContent = data.zone1 + ' cm';
-      document.getElementById('zone1Display').textContent = data.zone1 + 'cm';
-      document.getElementById('zone2Slider').value = data.zone2;
-      document.getElementById('zone2Val').textContent = data.zone2 + ' cm';
-      document.getElementById('zone2Display').textContent = data.zone2 + 'cm';
-
-      // Chart
-      if (data.history && data.history.length > 0) {
-        chartData = data.history.map(h => ({ d: h.d, z: h.z }));
-        drawChart(data.threshold);
-      }
+    // Zone badge
+    heroZone.className = 'hero-zone';
+    if (zone === 1) {
+      heroZone.classList.add('z1');
+      zoneText.textContent = 'Full portion dispensed';
+    } else if (zone === 2) {
+      heroZone.classList.add('z2');
+      zoneText.textContent = 'Half portion dispensed';
+    } else {
+      zoneText.textContent = 'No pet detected';
     }
 
-    function setConnected(val) {
-      connected = val;
-      connStatus.textContent = val ? 'Connected' : 'Disconnected';
-      connStatus.className = 'connection-status ' + (val ? 'connected' : 'disconnected');
+    // Status
+    statusBadge.className = 'status-pill ' + data.status;
+    statusText.textContent = data.status.toUpperCase();
+
+    // Feed button
+    if (data.feeding) {
+      feedBtn.className = 'btn btn-danger';
+      feedBtn.textContent = 'Stop Feeding';
+      feedBtn.onclick = stopFeed;
+    } else {
+      feedBtn.className = 'btn btn-primary';
+      feedBtn.textContent = 'Manual Feed';
+      feedBtn.onclick = manualFeed;
     }
 
-    // ---- COMMANDS ----
-    async function manualFeed() {
-      try { await fetch(`${API}/api/feed`, { method: 'POST' }); } catch (e) {}
+    // Last feed
+    if (data.last_feed) {
+      const ago = Math.floor((Date.now() / 1000) - data.last_feed);
+      if (ago < 60) lastFeed.textContent = `Last feed: ${ago}s ago`;
+      else if (ago < 3600) lastFeed.textContent = `Last feed: ${Math.floor(ago / 60)}m ago`;
+      else lastFeed.textContent = `Last feed: ${Math.floor(ago / 3600)}h ago`;
     }
 
-    async function stopFeed() {
-      try { await fetch(`${API}/api/close`, { method: 'POST' }); } catch (e) {}
+    // Sliders
+    document.getElementById('thresholdSlider').value = data.threshold;
+    document.getElementById('thresholdVal').textContent = data.threshold + ' cm';
+    document.getElementById('cooldownSlider').value = data.cooldown;
+    document.getElementById('cooldownVal').textContent = data.cooldown + ' sec';
+    document.getElementById('zone1Slider').value = data.zone1;
+    document.getElementById('zone1Val').textContent = data.zone1 + ' cm';
+    document.getElementById('zone1Display').textContent = data.zone1 + 'cm';
+    document.getElementById('zone2Slider').value = data.zone2;
+    document.getElementById('zone2Val').textContent = data.zone2 + ' cm';
+    document.getElementById('zone2Display').textContent = data.zone2 + 'cm';
+
+    // Chart
+    if (data.history && data.history.length > 0) {
+      chartData = data.history.map(h => ({ d: h.d, z: h.z }));
+      drawChart(data.threshold);
+    }
+  }
+
+  function setConnected(val) {
+    connected = val;
+    connStatus.textContent = val ? 'Connected' : 'Disconnected';
+    connStatus.className = 'conn-dot' + (val ? ' on' : '');
+  }
+
+  async function manualFeed() {
+    try { await fetch(`${API}/api/feed`, { method: 'POST' }); } catch (e) {}
+  }
+
+  async function stopFeed() {
+    try { await fetch(`${API}/api/close`, { method: 'POST' }); } catch (e) {}
+  }
+
+  async function updateThreshold(val) {
+    document.getElementById('thresholdVal').textContent = val + ' cm';
+    try { await fetch(`${API}/api/threshold?val=${val}`, { method: 'POST' }); } catch (e) {}
+  }
+
+  async function updateCooldown(val) {
+    document.getElementById('cooldownVal').textContent = val + ' sec';
+    try { await fetch(`${API}/api/cooldown?val=${val}`, { method: 'POST' }); } catch (e) {}
+  }
+
+  async function updateZone1(val) {
+    document.getElementById('zone1Val').textContent = val + ' cm';
+    try { await fetch(`${API}/api/zone1?val=${val}`, { method: 'POST' }); } catch (e) {}
+  }
+
+  async function updateZone2(val) {
+    document.getElementById('zone2Val').textContent = val + ' cm';
+    try { await fetch(`${API}/api/zone2?val=${val}`, { method: 'POST' }); } catch (e) {}
+  }
+
+  function downloadCSV() {
+    window.location.href = `${API}/api/csv`;
+  }
+
+  function drawChart(threshold) {
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const w = rect.width;
+    const h = rect.height;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, w, h);
+    if (chartData.length < 2) return;
+
+    const maxDist = Math.max(...chartData.map(c => c.d), threshold + 10);
+    const pad = { top: 12, bottom: 24, left: 40, right: 12 };
+    const pw = w - pad.left - pad.right;
+    const ph = h - pad.top - pad.bottom;
+
+    // Grid lines
+    ctx.strokeStyle = '#1e2636';
+    ctx.lineWidth = 1;
+    ctx.font = '11px Inter, sans-serif';
+    ctx.fillStyle = '#4a5568';
+    ctx.textAlign = 'right';
+    for (let i = 0; i <= 4; i++) {
+      const y = pad.top + (ph / 4) * i;
+      ctx.beginPath();
+      ctx.moveTo(pad.left, y);
+      ctx.lineTo(w - pad.right, y);
+      ctx.stroke();
+      ctx.fillText(Math.round(maxDist - (maxDist / 4) * i), pad.left - 8, y + 4);
     }
 
-    async function updateThreshold(val) {
-      document.getElementById('thresholdVal').textContent = val + ' cm';
-      try { await fetch(`${API}/api/threshold?val=${val}`, { method: 'POST' }); } catch (e) {}
+    // Threshold line
+    const ty = pad.top + ph * (1 - threshold / maxDist);
+    ctx.strokeStyle = '#ef444466';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(pad.left, ty);
+    ctx.lineTo(w - pad.right, ty);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Threshold label
+    ctx.fillStyle = '#ef4444';
+    ctx.font = '10px Inter, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('threshold', w - pad.right - 50, ty - 5);
+
+    // Data line
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    for (let i = 1; i < chartData.length; i++) {
+      const x0 = pad.left + (pw / (chartData.length - 1)) * (i - 1);
+      const y0 = pad.top + ph * (1 - chartData[i - 1].d / maxDist);
+      const x1 = pad.left + (pw / (chartData.length - 1)) * i;
+      const y1 = pad.top + ph * (1 - chartData[i].d / maxDist);
+      ctx.strokeStyle = chartData[i].z === 1 ? '#22c55e' : chartData[i].z === 2 ? '#f59e0b' : '#3b82f6';
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.stroke();
     }
+  }
 
-    async function updateCooldown(val) {
-      document.getElementById('cooldownVal').textContent = val + ' sec';
-      try { await fetch(`${API}/api/cooldown?val=${val}`, { method: 'POST' }); } catch (e) {}
-    }
-
-    async function updateZone1(val) {
-      document.getElementById('zone1Val').textContent = val + ' cm';
-      try { await fetch(`${API}/api/zone1?val=${val}`, { method: 'POST' }); } catch (e) {}
-    }
-
-    async function updateZone2(val) {
-      document.getElementById('zone2Val').textContent = val + ' cm';
-      try { await fetch(`${API}/api/zone2?val=${val}`, { method: 'POST' }); } catch (e) {}
-    }
-
-    function downloadCSV() {
-      window.location.href = `${API}/api/csv`;
-    }
-
-    // ---- CHART ----
-    function drawChart(threshold) {
-      const w = canvas.width = canvas.parentElement.clientWidth;
-      const h = canvas.height = canvas.parentElement.clientHeight;
-      ctx.clearRect(0, 0, w, h);
-      if (chartData.length < 2) return;
-
-      const maxDist = Math.max(...chartData.map(c => c.d), threshold + 10);
-      const pad = { top: 10, bottom: 20, left: 35, right: 10 };
-      const pw = w - pad.left - pad.right;
-      const ph = h - pad.top - pad.bottom;
-
-      // Grid
-      ctx.strokeStyle = '#334155';
-      ctx.lineWidth = 1;
-      for (let i = 0; i <= 4; i++) {
-        const y = pad.top + (ph / 4) * i;
-        ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(w - pad.right, y); ctx.stroke();
-        ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
-        ctx.fillText(Math.round(maxDist - (maxDist / 4) * i) + 'cm', pad.left - 4, y + 3);
-      }
-
-      // Threshold line
-      const ty = pad.top + ph * (1 - threshold / maxDist);
-      ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1;
-      ctx.setLineDash([4, 4]);
-      ctx.beginPath(); ctx.moveTo(pad.left, ty); ctx.lineTo(w - pad.right, ty); ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Data line with zone colors
-      for (let i = 1; i < chartData.length; i++) {
-        const x0 = pad.left + (pw / (chartData.length - 1)) * (i - 1);
-        const y0 = pad.top + ph * (1 - chartData[i - 1].d / maxDist);
-        const x1 = pad.left + (pw / (chartData.length - 1)) * i;
-        const y1 = pad.top + ph * (1 - chartData[i].d / maxDist);
-        ctx.strokeStyle = chartData[i].z === 1 ? '#22c55e' : chartData[i].z === 2 ? '#fbbf24' : '#38bdf8';
-        ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
-      }
-    }
-
-    // ---- INIT ----
-    setInterval(fetchStatus, 1000);
-    fetchStatus();
-    window.addEventListener('resize', () => drawChart(20));
-  </script>
+  setInterval(fetchStatus, 1000);
+  fetchStatus();
+  window.addEventListener('resize', () => {
+    if (chartData.length > 1) drawChart(20);
+  });
+</script>
 </body>
 </html>
