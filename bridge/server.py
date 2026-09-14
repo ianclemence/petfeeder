@@ -1,11 +1,13 @@
 """
-Pet Feeder Bridge v1.0 - Serial-to-Web Bridge
+Pet Feeder Bridge v2.0 — Serial-to-Web Bridge
 ===============================================
-Features:
-  - Real-time distance streaming from Arduino
-  - Adjustable threshold and cooldown from dashboard
-  - CSV data logging for analysis
-  - Multi-zone support
+Bridges the Arduino's serial output to a web dashboard.
+
+LEARNING GOALS (for students):
+  1. How serial communication works between Arduino and PC
+  2. How a Python HTTP server serves web pages
+  3. How threading lets us read serial AND serve web requests at the same time
+  4. How CSV files store data for later analysis
 
 Usage:
   python bridge/server.py
@@ -18,7 +20,7 @@ import os
 import sys
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, date
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -27,14 +29,17 @@ import serial
 import serial.tools.list_ports
 
 # ---- CONFIGURATION ----
-BAUD_RATE = 115200
-WEB_PORT = 8080
+BAUD_RATE = 115200          # Must match the Arduino's Serial.begin() value
+WEB_PORT = 8080             # Port for the web dashboard
 LOG_DIR = Path(__file__).parent.parent / "logs"
 CSV_FILE = LOG_DIR / "feeder_data.csv"
 
 
 def find_arduino():
-    """Auto-detect Arduino/CH340 serial port."""
+    """Auto-detect Arduino/CH340 serial port.
+    Instead of hardcoding 'COM4', this scans all serial ports
+    and looks for keywords that match common Arduino clones.
+    """
     keywords = ["CH340", "Arduino", "USB-SERIAL", "USB Serial"]
     for port in serial.tools.list_ports.comports():
         desc = port.description or ""
@@ -45,7 +50,10 @@ def find_arduino():
                 return port.device
     return None
 
+
 # ---- GLOBAL STATE ----
+# This dictionary holds the latest data from the Arduino.
+# Multiple threads access it, so we use a lock to prevent conflicts.
 state = {
     "distance": 999.0,
     "feeding": False,
@@ -63,7 +71,10 @@ serial_port = None
 
 
 def init_csv():
-    """Create CSV log file with headers if it doesn't exist."""
+    """Create the CSV log file with column headers if it doesn't exist.
+    CSV = Comma-Separated Values. Each line is one data point.
+    This lets you open the data in Excel or Google Sheets later.
+    """
     LOG_DIR.mkdir(exist_ok=True)
     if not CSV_FILE.exists():
         with open(CSV_FILE, "w", newline="") as f:
@@ -72,7 +83,9 @@ def init_csv():
 
 
 def log_to_csv(distance, zone, feeding, event=""):
-    """Append one row to the CSV log."""
+    """Append one row to the CSV log file.
+    'a' mode means append (add to end), not overwrite.
+    """
     try:
         with open(CSV_FILE, "a", newline="") as f:
             writer = csv.writer(f)
@@ -87,8 +100,61 @@ def log_to_csv(distance, zone, feeding, event=""):
         print(f"[LOG] CSV write error: {e}")
 
 
+def get_feeding_stats():
+    """Calculate feeding statistics from the CSV log.
+    This reads the log file and counts how many feeds happened today,
+    calculates the average time between feeds, etc.
+    """
+    stats = {
+        "feeds_today": 0,
+        "total_feeds": 0,
+        "avg_interval_seconds": 0,
+    }
+
+    if not CSV_FILE.exists():
+        return stats
+
+    feed_times = []
+    today_str = date.today().isoformat()
+
+    try:
+        with open(CSV_FILE, "r") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row.get("event") == "OPENED":
+                    stats["total_feeds"] += 1
+                    ts = row.get("timestamp", "")
+                    feed_times.append(ts)
+                    if ts.startswith(today_str):
+                        stats["feeds_today"] += 1
+
+        # Calculate average interval between feeds
+        if len(feed_times) >= 2:
+            # Parse the last 20 feed timestamps to compute average gap
+            recent = feed_times[-20:]
+            timestamps = []
+            for ts in recent:
+                try:
+                    timestamps.append(datetime.fromisoformat(ts))
+                except ValueError:
+                    pass
+            if len(timestamps) >= 2:
+                total_seconds = 0
+                for i in range(1, len(timestamps)):
+                    gap = (timestamps[i] - timestamps[i - 1]).total_seconds()
+                    total_seconds += gap
+                stats["avg_interval_seconds"] = round(total_seconds / (len(timestamps) - 1))
+
+    except Exception as e:
+        print(f"[STATS] Error reading CSV: {e}")
+
+    return stats
+
+
 def send_command(cmd):
-    """Send a command to Arduino via serial."""
+    """Send a command string to the Arduino via serial.
+    The \n at the end tells the Arduino "this is the end of the command."
+    """
     global serial_port
     if serial_port and serial_port.is_open:
         serial_port.write(f"{cmd}\n".encode())
@@ -98,9 +164,12 @@ def send_command(cmd):
 
 
 def serial_reader():
-    """Read lines from Arduino, update global state."""
+    """Read lines from Arduino and update the global state.
+    This runs in a separate thread so it doesn't block the web server.
+    """
     global serial_port
 
+    # Wait until the serial port is connected
     while serial_port is None:
         time.sleep(0.1)
 
@@ -111,11 +180,14 @@ def serial_reader():
             if not raw:
                 continue
 
+            # Decode bytes to string, ignoring any bad characters
             line = raw.decode("utf-8", errors="ignore").strip()
             if not line:
                 continue
 
-            # DIST:12.5:1 (distance:zone)
+            # Parse different message types from Arduino
+
+            # DIST:12.5:1 — distance in cm and zone number
             if line.startswith("DIST:"):
                 parts = line.split(":")
                 if len(parts) >= 2:
@@ -130,6 +202,7 @@ def serial_reader():
                                 "d": dist,
                                 "z": zone,
                             })
+                            # Keep only the last 120 data points for the chart
                             if len(state["history"]) > 120:
                                 state["history"] = state["history"][-120:]
                         log_to_csv(dist, zone, state["feeding"])
@@ -157,7 +230,8 @@ def serial_reader():
                     with state_lock:
                         state["threshold"] = val
                     print(f"[BRIDGE] Threshold set to {val}cm")
-                except: pass
+                except Exception:
+                    pass
 
             elif line.startswith("ACK:COOLDOWN:"):
                 try:
@@ -165,21 +239,24 @@ def serial_reader():
                     with state_lock:
                         state["cooldown"] = val
                     print(f"[BRIDGE] Cooldown set to {val}s")
-                except: pass
+                except Exception:
+                    pass
 
             elif line.startswith("ACK:ZONE1:"):
                 try:
                     val = float(line.split(":")[2])
                     with state_lock:
                         state["zone1"] = val
-                except: pass
+                except Exception:
+                    pass
 
             elif line.startswith("ACK:ZONE2:"):
                 try:
                     val = float(line.split(":")[2])
                     with state_lock:
                         state["zone2"] = val
-                except: pass
+                except Exception:
+                    pass
 
             elif line.startswith("EVENT:"):
                 print(f"[BRIDGE] {line}")
@@ -193,7 +270,10 @@ def serial_reader():
 
 
 class FeederHandler(SimpleHTTPRequestHandler):
+    """HTTP request handler that serves the web dashboard and API."""
+
     def __init__(self, *args, **kwargs):
+        # Serve static files from the web/ directory
         super().__init__(*args, directory=str(Path(__file__).parent.parent / "web"), **kwargs)
 
     def do_GET(self):
@@ -204,6 +284,9 @@ class FeederHandler(SimpleHTTPRequestHandler):
 
         elif parsed.path == "/api/csv":
             self._send_csv()
+
+        elif parsed.path == "/api/stats":
+            self._send_stats()
 
         else:
             super().do_GET()
@@ -273,6 +356,15 @@ class FeederHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
 
+    def _send_stats(self):
+        """Send feeding statistics as JSON."""
+        stats = get_feeding_stats()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(json.dumps(stats).encode())
+
     def _send_csv(self):
         """Send the CSV file for download."""
         try:
@@ -293,14 +385,14 @@ class FeederHandler(SimpleHTTPRequestHandler):
             self.send_error(503, "Serial not connected")
 
     def log_message(self, format, *args):
-        pass
+        pass  # Suppress default HTTP request logging
 
 
 def main():
     global serial_port
 
     print("=" * 50)
-    print("  AUTOMATIC PET FEEDER v1.0 - Web Dashboard Bridge")
+    print("  AUTOMATIC PET FEEDER v2.0 - Web Dashboard Bridge")
     print("=" * 50)
 
     init_csv()
@@ -313,11 +405,13 @@ def main():
     print(f"[BRIDGE] Opening {serial_port_path} at {BAUD_RATE} baud...")
     try:
         serial_port = serial.Serial(serial_port_path, BAUD_RATE, timeout=0.1)
-        time.sleep(2)
+        time.sleep(2)  # Wait for Arduino to reset after serial connection
     except serial.SerialException as e:
         print(f"[BRIDGE] ERROR: Cannot open {serial_port_path}: {e}")
         sys.exit(1)
 
+    # Start the serial reader in a background thread
+    # daemon=True means the thread will stop when the main program stops
     t = threading.Thread(target=serial_reader, daemon=True)
     t.start()
 

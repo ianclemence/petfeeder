@@ -6,19 +6,40 @@ An Arduino-based automatic pet feeder that uses an ultrasonic distance sensor to
 
 **No timer** — purely proximity-triggered with a cooldown to prevent overfeeding.
 
+## For Students — What You'll Learn
+
+| Concept | Where | What It Teaches |
+|---------|-------|-----------------|
+| **Modular code** | `firmware/*.h` | Splitting code into files with `#include` |
+| **Ultrasonic sensing** | `sensor.h` | How sound waves measure distance |
+| **Servo control** | `servo_control.h` | PWM signals and motor angles |
+| **Serial protocol** | `commands.h` | Device-to-PC communication |
+| **HTTP server** | `server.py` | Python networking basics |
+| **CSV logging** | `server.py` | Data storage and analysis |
+| **JSON APIs** | `server.py` | REST endpoint design |
+| **Real-time dashboard** | `index.html` | Polling, canvas charts, DOM updates |
+
 ## Project Structure
 
 ```
-catfeeding/
+petfeeder/
 ├── firmware/
 │   └── pet_feeder/
-│       └── pet_feeder.ino    # Arduino firmware (C++)
+│       ├── pet_feeder.ino    # Main program (setup + loop)
+│       ├── config.h          # All settings you can change
+│       ├── sensor.h          # Ultrasonic distance reading
+│       ├── servo_control.h   # Servo motor control
+│       └── commands.h        # Serial command handling
 ├── bridge/
 │   ├── server.py             # Python serial-to-web bridge
 │   └── requirements.txt      # Python dependencies
 ├── web/
 │   └── index.html            # Browser dashboard
-└── README.md                 # This file
+├── logs/                     # CSV data logs (auto-created)
+├── README.md                 # This file
+├── README_TH.md              # บทนำโครงการ (Thai)
+├── SETUP.md                  # Setup guide (English)
+└── SETUP_TH.md               # คู่มือติดตั้ง (Thai)
 ```
 
 ## Hardware Requirements
@@ -93,24 +114,43 @@ Then open **http://localhost:8080** in your browser.
 2. Stores the latest distance and feeding state in memory
 3. Serves a web dashboard on port 8080
 4. Passes commands (feed/stop) from the dashboard to Arduino
+5. Logs all events to a CSV file for analysis
+6. Provides feeding statistics (feeds today, average interval)
 
 ### Dashboard (HTML/JS)
 
 1. Polls the Python bridge every second for current status
 2. Displays distance with color coding (green = pet detected, red = far)
 3. Shows real-time distance chart
-4. Manual feed button for testing
+4. Shows feeding stats (today, all-time, average interval)
+5. Manual feed button for testing
 
 ## Customization
 
-Edit the top of `firmware/pet_feeder/pet_feeder.ino`:
+Edit `firmware/pet_feeder/config.h`:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `DETECT_DISTANCE_CM` | 20.0 | How close the pet must be (cm) |
-| `COOLDOWN_MS` | 15000 | Minimum time between feeds (ms) |
-| `SERVO_OPEN_ANGLE` | 90 | How far the gate opens (degrees) |
+| `detection_range_cm` | 20.0 | How close the pet must be (cm) |
+| `cooldown_seconds` | 15 | Minimum time between feeds (seconds) |
+| `zone1_close_cm` | 15.0 | Full portion zone distance (cm) |
+| `zone2_medium_cm` | 30.0 | Half portion zone distance (cm) |
+| `ZONE_FULL_ANGLE` | 90 | How far the gate opens for full portion (degrees) |
+| `ZONE_HALF_ANGLE` | 45 | How far the gate opens for half portion (degrees) |
 | `HOLD_TIME_MS` | 3000 | How long the gate stays open (ms) |
+
+## Common Mistakes (and How to Fix Them)
+
+| Mistake | What Happens | How to Fix |
+|---------|-------------|------------|
+| **Wrong COM port** | "Cannot open COM4" | Check Device Manager for your Arduino's port, update in `server.py` |
+| **Servo jitters** | Gate opens/closes randomly | Use external 5V power for servo, not just USB power |
+| **Distance stuck at 999** | No pet ever detected | Check TRIG/D9 and ECHO/D10 wiring — they might be swapped |
+| **Coiled servo** | Servo doesn't move | Red wire must go to 5V, brown to GND, orange to D6 |
+| **Dashboard won't load** | Page shows "Connecting" | Make sure `python server.py` is running in the terminal |
+| **CH340 not detected** | Arduino not found | Install CH340 driver: https://www.wch-ic.com/downloads/CH341SER_EXE.html |
+| **Compiler error** | "fatal error: Servo.h" | Run `arduino-cli lib install Servo` first |
+| **Data not saving** | No CSV file created | Check that the `logs/` folder exists and is writable |
 
 ## Troubleshooting
 

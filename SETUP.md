@@ -160,16 +160,20 @@ Edit the top of `firmware/pet_feeder/pet_feeder.ino`:
 ## Project Structure
 
 ```
-petfeeding-detector/
+petfeeder/
 ├── firmware/
 │   └── pet_feeder/
-│       └── pet_feeder.ino    # Arduino firmware (C++)
+│       ├── pet_feeder.ino    # Main program (setup + loop)
+│       ├── config.h          # All settings you can change
+│       ├── sensor.h          # Ultrasonic distance reading
+│       ├── servo_control.h   # Servo motor control
+│       └── commands.h        # Serial command handling
 ├── bridge/
 │   ├── server.py             # Python serial-to-web bridge
 │   └── requirements.txt      # Python dependencies
 ├── web/
 │   └── index.html            # Browser dashboard
-├── logs/                     # CSV data logs (gitignored)
+├── logs/                     # CSV data logs (auto-created)
 ├── README.md                 # Project overview
 ├── README_TH.md              # บทนำโครงการ (Thai)
 ├── SETUP.md                  # This file (English)

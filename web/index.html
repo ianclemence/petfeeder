@@ -362,6 +362,36 @@
     }
 
     /* ---- CHART ---- */
+    /* ---- STATS ---- */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+    }
+
+    .stat-item {
+      text-align: center;
+      padding: 12px 8px;
+      background: var(--surface-2);
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+
+    .stat-value {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .stat-label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 4px;
+    }
+
     .chart-full { grid-column: 1 / -1; }
 
     .chart-wrap {
@@ -435,6 +465,25 @@
 
       <button class="btn btn-primary" id="feedBtn" onclick="manualFeed()">Manual Feed</button>
       <button class="btn btn-ghost" onclick="downloadCSV()">Download CSV Log</button>
+    </div>
+
+    <!-- Stats -->
+    <div class="card">
+      <div class="card-title">Feeding Stats</div>
+      <div class="stats-grid">
+        <div class="stat-item">
+          <div class="stat-value" id="feedsToday">0</div>
+          <div class="stat-label">Today</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="totalFeeds">0</div>
+          <div class="stat-label">All Time</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="avgInterval">--</div>
+          <div class="stat-label">Avg Interval</div>
+        </div>
+      </div>
     </div>
 
     <!-- Settings -->
@@ -690,8 +739,27 @@
     }
   }
 
+  async function fetchStats() {
+    try {
+      const res = await fetch(`${API}/api/stats`);
+      if (!res.ok) return;
+      const data = await res.json();
+      document.getElementById('feedsToday').textContent = data.feeds_today;
+      document.getElementById('totalFeeds').textContent = data.total_feeds;
+      if (data.avg_interval_seconds > 0) {
+        const mins = Math.floor(data.avg_interval_seconds / 60);
+        const secs = data.avg_interval_seconds % 60;
+        document.getElementById('avgInterval').textContent = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+      } else {
+        document.getElementById('avgInterval').textContent = '--';
+      }
+    } catch (e) {}
+  }
+
   setInterval(fetchStatus, 1000);
+  setInterval(fetchStats, 5000);
   fetchStatus();
+  fetchStats();
   window.addEventListener('resize', () => {
     if (chartData.length > 1) drawChart(20);
   });

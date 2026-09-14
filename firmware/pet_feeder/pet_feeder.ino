@@ -1,225 +1,137 @@
 /*
- * Automatic Pet Feeder v1.0 - Arduino Firmware
- * ==============================================
- * Features:
- *   - Adjustable detection threshold (via serial command)
- *   - Adjustable cooldown between feeds (via serial command)
- *   - LED feedback on D13 (built-in LED)
- *   - Multi-zone: 3 distance zones = different servo angles
- *   - All settings configurable from web dashboard
+ * Automatic Pet Feeder v2.0 — Main Program
+ * ==========================================
+ * This is the main file that ties everything together.
+ * The actual logic is split into separate files for clarity:
+ *   - config.h       : All settings (distances, angles, timing)
+ *   - sensor.h       : Reading distance from the ultrasonic sensor
+ *   - servo_control.h: Opening and closing the food gate
+ *   - commands.h     : Handling commands from the PC
  *
- * Serial Commands:
- *   SET_THRESHOLD:xx   - Set detection distance in cm (default 20)
- *   SET_COOLDOWN:xx    - Set cooldown in seconds (default 15)
- *   SET_ZONE1:xx       - Set zone 1 distance (default 15cm -> 90°)
- *   SET_ZONE2:xx       - Set zone 2 distance (default 30cm -> 45°)
- *   OPEN / CLOSE       - Manual servo control
- *   STATUS             - Request current status
- *
- * Hardware:
- *   - Arduino UNO (CH340 clone)
- *   - HC-SR04 (Trig=D9, Echo=D10)
- *   - SG90 Servo (Signal=D6)
- *   - Built-in LED (D13)
+ * LEARNING GOAL: Students should understand how #include works.
+ *   When you write #include "config.h", it's like pasting the
+ *   contents of config.h right there. This lets us organize
+ *   code into logical pieces instead of one giant file.
  */
 
-#include <Servo.h>
+#include "config.h"
+#include "sensor.h"
+#include "servo_control.h"
+#include "commands.h"
 
-// ---- PIN DEFINITIONS ----
-const int TRIG_PIN   = 9;
-const int ECHO_PIN   = 10;
-const int SERVO_PIN  = 6;
-const int LED_PIN    = 13;  // Built-in LED
+// ---- STATE VARIABLES ----
+// These track what the feeder is currently doing.
+bool is_feeding = false;            // Is the gate open right now?
+unsigned long feed_start_time = 0;  // When did the current feed start?
+unsigned long last_feed_time = 0;   // When did the last feed end?
+unsigned long last_distance_time = 0;  // Last time we sent distance
+unsigned long last_led_blink = 0;   // Last time we toggled the LED
+bool led_state = false;             // Is the LED on or off?
+int current_zone = 0;               // Which zone triggered the feed (0=none, 1=full, 2=half)
 
-// ---- DEFAULT SETTINGS (overridable via serial) ----
-float threshold_cm  = 20.0;   // Default detection range
-unsigned long cooldown_ms = 15000; // Default 15 seconds
-
-// Multi-zone distances (closer = more food)
-float zone1_cm = 15.0;   // Very close -> 90° (full dispense)
-float zone2_cm = 30.0;   // Medium close -> 45° (half dispense)
-
-// Servo angles per zone
-const int ZONE_FULL_ANGLE  = 90;   // Zone 1: full portion
-const int ZONE_HALF_ANGLE  = 45;   // Zone 2: half portion
-const int CLOSE_ANGLE      = 0;    // Closed
-
-// Timing
-const unsigned long HOLD_TIME_MS     = 3000;   // 3s dispense
-const unsigned long DISTANCE_INTERVAL = 500;   // Send every 500ms
-const unsigned long LED_BLINK_INTERVAL = 200;  // LED blink speed
-
-// ---- STATE ----
-Servo feederServo;
-bool feeding = false;
-unsigned long feedStartTime = 0;
-unsigned long lastFeedTime  = 0;
-unsigned long lastDistanceTime = 0;
-unsigned long lastLedBlink = 0;
-bool ledState = false;
-int currentZone = 0;  // 0=none, 1=full, 2=half
-
-// ---- READ DISTANCE ----
-float readDistanceCM() {
-  digitalWrite(TRIG_PIN, LOW);
-  delayMicroseconds(2);
-  digitalWrite(TRIG_PIN, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(TRIG_PIN, LOW);
-  long duration = pulseIn(ECHO_PIN, HIGH, 30000);
-  if (duration == 0) return 999.0;
-  return (duration * 0.034) / 2.0;
-}
-
-// ---- DETERMINE ZONE ----
-// Returns: 0=no pet, 1=very close (full), 2=medium (half)
-int getZone(float dist) {
-  if (dist <= 0 || dist >= 999) return 0;
-  if (dist < zone1_cm) return 1;       // Very close -> full portion
-  if (dist < zone2_cm) return 2;       // Medium -> half portion
-  return 0;                             // Too far
-}
-
-// ---- READ SERIAL COMMAND ----
-String readCommand() {
-  String cmd = Serial.readStringUntil('\n');
-  cmd.trim();
-  return cmd;
-}
-
-// ---- SEND STATUS ----
-void sendStatus() {
-  float dist = readDistanceCM();
-  int zone = getZone(dist);
+// ---- HELPER: Send status to PC ----
+void send_full_status() {
+  float dist = read_distance_cm();
+  int zone = get_zone(dist);
   Serial.print("STATUS:");
-  Serial.print(feeding ? "FEEDING" : "IDLE");
+  Serial.print(is_feeding ? "FEEDING" : "IDLE");
   Serial.print(":");
   Serial.print(dist, 1);
   Serial.print(":");
   Serial.print(zone);
   Serial.print(":");
-  Serial.print(threshold_cm, 1);
+  Serial.print(detection_range_cm, 1);
   Serial.print(":");
-  Serial.println(cooldown_ms / 1000);
+  Serial.println(cooldown_seconds);
 }
 
 // ---- SETUP ----
+// This runs once when the Arduino powers on or is reset.
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(115200);  // Start serial communication at 115200 bits per second
 
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
 
-  feederServo.attach(SERVO_PIN);
-  feederServo.write(CLOSE_ANGLE);
+  servo_setup();  // Initialize the servo (from servo_control.h)
 
-  Serial.println("BOOT:PetFeeder v1.0");
+  Serial.println("BOOT:PetFeeder v2.0");
   Serial.println("ACK:READY");
 }
 
 // ---- MAIN LOOP ----
+// This runs over and over, as fast as the Arduino can go.
+// We use timing checks (millis()) instead of delay() so the
+// Arduino can do multiple things at once (like read serial
+// AND measure distance AND blink the LED).
 void loop() {
   unsigned long now = millis();
 
-  // ---- SERIAL COMMAND HANDLING ----
+  // ---- HANDLE SERIAL COMMANDS ----
   if (Serial.available() > 0) {
-    String cmd = readCommand();
+    String cmd = read_command();
+    String action = process_command(cmd);
 
-    if (cmd.startsWith("SET_THRESHOLD:")) {
-      float val = cmd.substring(14).toFloat();
-      if (val > 0 && val <= 200) {
-        threshold_cm = val;
-        Serial.print("ACK:THRESHOLD:");
-        Serial.println(threshold_cm, 1);
-      } else {
-        Serial.println("ERR:INVALID_THRESHOLD");
-      }
-
-    } else if (cmd.startsWith("SET_COOLDOWN:")) {
-      float val = cmd.substring(13).toFloat();
-      if (val >= 0 && val <= 300) {
-        cooldown_ms = (unsigned long)(val * 1000);
-        Serial.print("ACK:COOLDOWN:");
-        Serial.println(cooldown_ms / 1000);
-      } else {
-        Serial.println("ERR:INVALID_COOLDOWN");
-      }
-
-    } else if (cmd.startsWith("SET_ZONE1:")) {
-      float val = cmd.substring(10).toFloat();
-      if (val > 0 && val <= 200) {
-        zone1_cm = val;
-        Serial.print("ACK:ZONE1:");
-        Serial.println(zone1_cm, 1);
-      }
-
-    } else if (cmd.startsWith("SET_ZONE2:")) {
-      float val = cmd.substring(10).toFloat();
-      if (val > 0 && val <= 200) {
-        zone2_cm = val;
-        Serial.print("ACK:ZONE2:");
-        Serial.println(zone2_cm, 1);
-      }
-
-    } else if (cmd == "OPEN") {
-      feeding = true;
-      feedStartTime = now;
-      currentZone = 1;
-      feederServo.write(ZONE_FULL_ANGLE);
+    if (action == "OPEN") {
+      is_feeding = true;
+      feed_start_time = now;
+      current_zone = 1;
+      open_gate(ZONE_FULL_ANGLE);
       digitalWrite(LED_PIN, HIGH);
       Serial.println("OPENED");
 
-    } else if (cmd == "CLOSE") {
-      feeding = false;
-      currentZone = 0;
-      feederServo.write(CLOSE_ANGLE);
+    } else if (action == "CLOSE") {
+      is_feeding = false;
+      current_zone = 0;
+      close_gate();
       digitalWrite(LED_PIN, LOW);
       Serial.println("CLOSED");
 
-    } else if (cmd == "STATUS") {
-      sendStatus();
-
-    } else {
-      Serial.println("ERR:UNKNOWN_CMD");
+    } else if (action == "STATUS") {
+      send_full_status();
     }
   }
 
-  // ---- AUTO SEND DISTANCE (heartbeat) ----
-  if (now - lastDistanceTime >= DISTANCE_INTERVAL) {
-    lastDistanceTime = now;
-    float dist = readDistanceCM();
-    int zone = getZone(dist);
+  // ---- SEND DISTANCE HEARTBEAT ----
+  // Every 500ms, send the current distance to the PC
+  // so the dashboard can show a live graph.
+  if (now - last_distance_time >= DISTANCE_INTERVAL) {
+    last_distance_time = now;
+    float dist = read_distance_cm();
+    int zone = get_zone(dist);
     Serial.print("DIST:");
     Serial.print(dist, 1);
     Serial.print(":");
     Serial.println(zone);
   }
 
-  // ---- LED BLINKING during feeding ----
-  if (feeding) {
-    if (now - lastLedBlink >= LED_BLINK_INTERVAL) {
-      lastLedBlink = now;
-      ledState = !ledState;
-      digitalWrite(LED_PIN, ledState ? HIGH : LOW);
+  // ---- BLINK LED DURING FEEDING ----
+  // This gives a visual indicator that food is being dispensed.
+  if (is_feeding) {
+    if (now - last_led_blink >= LED_BLINK_INTERVAL) {
+      last_led_blink = now;
+      led_state = !led_state;
+      digitalWrite(LED_PIN, led_state ? HIGH : LOW);
     }
   }
 
-  // ---- AUTOMATIC FEEDING LOGIC ----
-  if (!feeding) {
-    float dist = readDistanceCM();
-    int zone = getZone(dist);
-    bool cooldownExpired = (now - lastFeedTime >= cooldown_ms);
+  // ---- AUTOMATIC FEEDING ----
+  // If we're not already feeding, check if a pet is nearby.
+  if (!is_feeding) {
+    float dist = read_distance_cm();
+    int zone = get_zone(dist);
+    bool cooldown_expired = (now - last_feed_time >= cooldown_seconds * 1000);
 
-    if (zone > 0 && cooldownExpired) {
-      feeding = true;
-      feedStartTime = now;
-      currentZone = zone;
+    if (zone > 0 && cooldown_expired) {
+      is_feeding = true;
+      feed_start_time = now;
+      current_zone = zone;
 
-      // Different angle per zone
+      // Choose servo angle based on zone
       int angle = (zone == 1) ? ZONE_FULL_ANGLE : ZONE_HALF_ANGLE;
-      feederServo.write(angle);
+      open_gate(angle);
 
       Serial.print("EVENT:ZONE");
       Serial.print(zone);
@@ -228,12 +140,13 @@ void loop() {
     }
   }
 
-  // ---- AUTO CLOSE AFTER HOLD TIME ----
-  if (feeding && (now - feedStartTime >= HOLD_TIME_MS)) {
-    feeding = false;
-    currentZone = 0;
-    feederServo.write(CLOSE_ANGLE);
-    lastFeedTime = now;
+  // ---- AUTO-CLOSE AFTER HOLD TIME ----
+  // After the gate has been open long enough, close it.
+  if (is_feeding && (now - feed_start_time >= HOLD_TIME_MS)) {
+    is_feeding = false;
+    current_zone = 0;
+    close_gate();
+    last_feed_time = now;
     digitalWrite(LED_PIN, LOW);
     Serial.println("CLOSED");
     Serial.println("EVENT:FEED_COMPLETE");

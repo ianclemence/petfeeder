@@ -160,19 +160,23 @@ python server.py
 ## โครงสร้างโปรเจกต์
 
 ```
-petfeeding-detector/
+petfeeder/
 ├── firmware/
 │   └── pet_feeder/
-│       └── pet_feeder.ino    # โค้ด Arduino (C++)
+│       ├── pet_feeder.ino    # โปรแกรมหลัก (setup + loop)
+│       ├── config.h          # การตั้งค่าทั้งหมด
+│       ├── sensor.h          # การอ่านระยะอัลตราโซนิก
+│       ├── servo_control.h   # การควบคุมมอเตอร์เซอร์โว
+│       └── commands.h        # การจัดการคำสั่ง Serial
 ├── bridge/
 │   ├── server.py             # Python bridge สำหรับแปลง Serial เป็น Web
 │   └── requirements.txt      # dependencies ของ Python
 ├── web/
 │   └── index.html            # หน้า Dashboard บนเบราว์เซอร์
-├── logs/                     # บันทึกข้อมูล CSV (ไม่ commit)
-├── README.md                 # บทนำโครงการ (อังกฤษ)
+├── logs/                     # บันทึกข้อมูล CSV (สร้างอัตโนมัติ)
+├── README.md                 # English README
 ├── README_TH.md              # บทนำโครงการ (ไทย)
 ├── SETUP.md                  # คู่มือติดตั้ง (อังกฤษ)
-├── SETUP_TH.md              # ไฟล์นี้ (ไทย)
+├── SETUP_TH.md               # ไฟล์นี้ (ไทย)
 └── .gitignore
 ```
