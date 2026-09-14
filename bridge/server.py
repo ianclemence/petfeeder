@@ -1,24 +1,24 @@
 """
-Pet Feeder Bridge - Serial-to-Web Bridge
-=========================================
-Reads distance data from Arduino on COM4 (115200 baud)
-and exposes it via a simple HTTP server for the web dashboard.
-
-How it works:
-  1. Python opens COM4 and reads serial messages from Arduino
-  2. Arduino sends "DIST:xx.x" every 500ms with current distance
-  3. Python stores the latest reading in memory
-  4. Web dashboard polls http://localhost:8080/api/status every second
-  5. Dashboard can send "feed" command via POST /api/feed
+Pet Feeder Bridge v2.0 - Serial-to-Web Bridge
+===============================================
+Features:
+  - Real-time distance streaming from Arduino
+  - Adjustable threshold and cooldown from dashboard
+  - CSV data logging for analysis
+  - Multi-zone support
 
 Usage:
   python bridge/server.py
-  Then open http://localhost:8080 in your browser
+  Then open http://localhost:8080
 """
 
+import csv
 import json
+import os
+import sys
 import threading
 import time
+from datetime import datetime
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -26,10 +26,11 @@ from urllib.parse import urlparse, parse_qs
 import serial
 
 # ---- CONFIGURATION ----
-SERIAL_PORT = "COM4"
+SERIAL_PORT = "COM5"
 BAUD_RATE = 115200
 WEB_PORT = 8080
-SERIAL_TIMEOUT = 0.1  # Non-blocking serial reads
+LOG_DIR = Path(__file__).parent.parent / "logs"
+CSV_FILE = LOG_DIR / "feeder_data.csv"
 
 # ---- GLOBAL STATE ----
 state = {
@@ -37,30 +38,63 @@ state = {
     "feeding": False,
     "last_feed": None,
     "status": "waiting",
-    "history": [],  # Last 60 readings for the chart
+    "zone": 0,
+    "threshold": 20.0,
+    "cooldown": 15,
+    "zone1": 15.0,
+    "zone2": 30.0,
+    "history": [],
 }
 state_lock = threading.Lock()
+serial_port = None
 
-# ---- SERIAL READER THREAD ----
-def serial_reader():
-    """
-    Continuously reads lines from Arduino serial port.
-    Parses distance values and feeding events.
-    Runs in a background thread so the web server isn't blocked.
-    """
-    print(f"[BRIDGE] Connecting to {SERIAL_PORT} at {BAUD_RATE} baud...")
+
+def init_csv():
+    """Create CSV log file with headers if it doesn't exist."""
+    LOG_DIR.mkdir(exist_ok=True)
+    if not CSV_FILE.exists():
+        with open(CSV_FILE, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["timestamp", "distance_cm", "zone", "feeding", "event"])
+
+
+def log_to_csv(distance, zone, feeding, event=""):
+    """Append one row to the CSV log."""
     try:
-        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=SERIAL_TIMEOUT)
-        time.sleep(2)  # Wait for Arduino to reset after serial connection
-        print("[BRIDGE] Connected! Reading sensor data...")
-    except serial.SerialException as e:
-        print(f"[BRIDGE] ERROR: Cannot open {SERIAL_PORT}: {e}")
-        print("[BRIDGE] Make sure Arduino is plugged in and no other program is using the port.")
-        return
+        with open(CSV_FILE, "a", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                datetime.now().isoformat(),
+                round(distance, 1),
+                zone,
+                feeding,
+                event,
+            ])
+    except Exception as e:
+        print(f"[LOG] CSV write error: {e}")
 
+
+def send_command(cmd):
+    """Send a command to Arduino via serial."""
+    global serial_port
+    if serial_port and serial_port.is_open:
+        serial_port.write(f"{cmd}\n".encode())
+        serial_port.flush()
+        return True
+    return False
+
+
+def serial_reader():
+    """Read lines from Arduino, update global state."""
+    global serial_port
+
+    while serial_port is None:
+        time.sleep(0.1)
+
+    print("[BRIDGE] Connected! Reading sensor data...")
     while True:
         try:
-            raw = ser.readline()
+            raw = serial_port.readline()
             if not raw:
                 continue
 
@@ -68,77 +102,85 @@ def serial_reader():
             if not line:
                 continue
 
-            # Parse distance messages: "DIST:12.5"
+            # DIST:12.5:1 (distance:zone)
             if line.startswith("DIST:"):
-                try:
-                    dist = float(line.split(":")[1])
-                    with state_lock:
-                        state["distance"] = dist
-                        # Keep last 60 readings for chart
-                        state["history"].append({"t": time.time(), "d": dist})
-                        if len(state["history"]) > 60:
-                            state["history"] = state["history"][-60:]
-                except ValueError:
-                    pass
+                parts = line.split(":")
+                if len(parts) >= 2:
+                    try:
+                        dist = float(parts[1])
+                        zone = int(parts[2]) if len(parts) > 2 else 0
+                        with state_lock:
+                            state["distance"] = dist
+                            state["zone"] = zone
+                            state["history"].append({
+                                "t": time.time(),
+                                "d": dist,
+                                "z": zone,
+                            })
+                            if len(state["history"]) > 120:
+                                state["history"] = state["history"][-120:]
+                        log_to_csv(dist, zone, state["feeding"])
+                    except (ValueError, IndexError):
+                        pass
 
-            # Parse feeding events
             elif line == "OPENED":
                 with state_lock:
                     state["feeding"] = True
                     state["status"] = "feeding"
-                print("[BRIDGE] Servo OPENED - dispensing food")
+                log_to_csv(state["distance"], state["zone"], True, "OPENED")
+                print("[BRIDGE] Servo OPENED")
 
             elif line == "CLOSED":
                 with state_lock:
                     state["feeding"] = False
                     state["status"] = "idle"
                     state["last_feed"] = time.time()
-                print("[BRIDGE] Servo CLOSED - feeding complete")
+                log_to_csv(state["distance"], state["zone"], False, "CLOSED")
+                print("[BRIDGE] Servo CLOSED")
+
+            elif line.startswith("ACK:THRESHOLD:"):
+                try:
+                    val = float(line.split(":")[2])
+                    with state_lock:
+                        state["threshold"] = val
+                    print(f"[BRIDGE] Threshold set to {val}cm")
+                except: pass
+
+            elif line.startswith("ACK:COOLDOWN:"):
+                try:
+                    val = int(line.split(":")[2])
+                    with state_lock:
+                        state["cooldown"] = val
+                    print(f"[BRIDGE] Cooldown set to {val}s")
+                except: pass
+
+            elif line.startswith("ACK:ZONE1:"):
+                try:
+                    val = float(line.split(":")[2])
+                    with state_lock:
+                        state["zone1"] = val
+                except: pass
+
+            elif line.startswith("ACK:ZONE2:"):
+                try:
+                    val = float(line.split(":")[2])
+                    with state_lock:
+                        state["zone2"] = val
+                except: pass
 
             elif line.startswith("EVENT:"):
-                event = line.split(":")[1]
-                print(f"[BRIDGE] Event: {event}")
-
-            elif line.startswith("STATUS:"):
-                # STATUS:FEEDING:12.5 or STATUS:IDLE:999.0
-                parts = line.split(":")
-                if len(parts) == 3:
-                    with state_lock:
-                        state["feeding"] = parts[1] == "FEEDING"
-                        state["status"] = "feeding" if state["feeding"] else "idle"
-                        try:
-                            state["distance"] = float(parts[2])
-                        except ValueError:
-                            pass
+                print(f"[BRIDGE] {line}")
 
         except serial.SerialException:
-            print("[BRIDGE] Serial connection lost! Reconnecting...")
+            print("[BRIDGE] Serial lost! Waiting...")
             time.sleep(2)
-            try:
-                ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=SERIAL_TIMEOUT)
-                time.sleep(2)
-                print("[BRIDGE] Reconnected!")
-            except:
-                print("[BRIDGE] Reconnect failed. Will retry...")
-                time.sleep(3)
-
         except Exception as e:
-            print(f"[BRIDGE] Unexpected error: {e}")
-            time.sleep(1)
+            print(f"[BRIDGE] Error: {e}")
+            time.sleep(0.5)
 
 
-# ---- HTTP REQUEST HANDLER ----
 class FeederHandler(SimpleHTTPRequestHandler):
-    """
-    Handles web requests:
-      GET  /              -> Serves index.html from web/ folder
-      GET  /api/status    -> Returns JSON with current distance + state
-      POST /api/feed      -> Sends OPEN command to Arduino
-      POST /api/close     -> Sends CLOSE command to Arduino
-    """
-
     def __init__(self, *args, **kwargs):
-        # Serve files from the web/ directory
         super().__init__(*args, directory=str(Path(__file__).parent.parent / "web"), **kwargs)
 
     def do_GET(self):
@@ -146,28 +188,71 @@ class FeederHandler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/status":
             self._send_json(200)
+
+        elif parsed.path == "/api/csv":
+            self._send_csv()
+
         else:
             super().do_GET()
 
     def do_POST(self):
         parsed = urlparse(self.path)
+        params = parse_qs(parsed.query)
 
         if parsed.path == "/api/feed":
             self._send_command("OPEN")
+
         elif parsed.path == "/api/close":
             self._send_command("CLOSE")
+
+        elif parsed.path == "/api/threshold":
+            val = params.get("val", [None])[0]
+            if val:
+                self._send_command(f"SET_THRESHOLD:{val}")
+                self._send_json(200)
+            else:
+                self.send_error(400, "Missing val param")
+
+        elif parsed.path == "/api/cooldown":
+            val = params.get("val", [None])[0]
+            if val:
+                self._send_command(f"SET_COOLDOWN:{val}")
+                self._send_json(200)
+            else:
+                self.send_error(400, "Missing val param")
+
+        elif parsed.path == "/api/zone1":
+            val = params.get("val", [None])[0]
+            if val:
+                self._send_command(f"SET_ZONE1:{val}")
+                self._send_json(200)
+            else:
+                self.send_error(400, "Missing val param")
+
+        elif parsed.path == "/api/zone2":
+            val = params.get("val", [None])[0]
+            if val:
+                self._send_command(f"SET_ZONE2:{val}")
+                self._send_json(200)
+            else:
+                self.send_error(400, "Missing val param")
+
         else:
             self.send_error(404, "Not Found")
 
     def _send_json(self, code):
-        """Send the current state as JSON response."""
         with state_lock:
             data = {
                 "distance": state["distance"],
                 "feeding": state["feeding"],
                 "status": state["status"],
                 "last_feed": state["last_feed"],
-                "history": state["history"][-30:],  # Last 30 for chart
+                "zone": state["zone"],
+                "threshold": state["threshold"],
+                "cooldown": state["cooldown"],
+                "zone1": state["zone1"],
+                "zone2": state["zone2"],
+                "history": state["history"][-60:],
             }
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
@@ -175,50 +260,52 @@ class FeederHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
 
-    def _send_command(self, cmd):
-        """Send a command to Arduino via serial."""
+    def _send_csv(self):
+        """Send the CSV file for download."""
         try:
-            # We need access to the serial port - use a global reference
-            if hasattr(self.server, "serial_port") and self.server.serial_port:
-                self.server.serial_port.write(f"{cmd}\n".encode())
-                self.server.serial_port.flush()
-                self._send_json(200)
-            else:
-                self.send_error(503, "Serial port not connected")
-        except Exception as e:
-            self.send_error(500, str(e))
+            with open(CSV_FILE, "r") as f:
+                content = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv")
+            self.send_header("Content-Disposition", "attachment; filename=feeder_data.csv")
+            self.end_headers()
+            self.wfile.write(content.encode())
+        except FileNotFoundError:
+            self.send_error(404, "No data logged yet")
+
+    def _send_command(self, cmd):
+        if send_command(cmd):
+            self._send_json(200)
+        else:
+            self.send_error(503, "Serial not connected")
 
     def log_message(self, format, *args):
-        # Suppress default HTTP logging to keep console clean
-        if "/api/" in str(args[0]) if args else False:
-            pass  # Still log API calls
-        else:
-            pass  # Suppress static file logs
+        pass
 
 
-# ---- MAIN SERVER ----
 def main():
+    global serial_port
+
     print("=" * 50)
-    print("  AUTOMATIC PET FEEDER - Web Dashboard Bridge")
+    print("  AUTOMATIC PET FEEDER v2.0 - Web Dashboard Bridge")
     print("=" * 50)
 
-    # Start serial reader in background thread
-    reader_thread = threading.Thread(target=serial_reader, daemon=True)
-    reader_thread.start()
+    init_csv()
 
-    # Start web server
-    server = HTTPServer(("0.0.0.0", WEB_PORT), FeederHandler)
-
-    # Attach serial port reference to server for command sending
+    print(f"[BRIDGE] Opening {SERIAL_PORT} at {BAUD_RATE} baud...")
     try:
-        server.serial_port = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=SERIAL_TIMEOUT)
+        serial_port = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0.1)
         time.sleep(2)
-    except:
-        server.serial_port = None
-        print("[BRIDGE] WARNING: Could not attach serial port for commands")
+    except serial.SerialException as e:
+        print(f"[BRIDGE] ERROR: Cannot open {SERIAL_PORT}: {e}")
+        sys.exit(1)
 
-    print(f"[BRIDGE] Web server running at http://localhost:{WEB_PORT}")
-    print("[BRIDGE] Open your browser to view the dashboard")
+    t = threading.Thread(target=serial_reader, daemon=True)
+    t.start()
+
+    server = HTTPServer(("0.0.0.0", WEB_PORT), FeederHandler)
+    print(f"[BRIDGE] Dashboard: http://localhost:{WEB_PORT}")
+    print(f"[BRIDGE] CSV Log: {CSV_FILE}")
     print("[BRIDGE] Press Ctrl+C to stop")
     print("-" * 50)
 
@@ -227,6 +314,7 @@ def main():
     except KeyboardInterrupt:
         print("\n[BRIDGE] Shutting down...")
         server.shutdown()
+        serial_port.close()
 
 
 if __name__ == "__main__":
