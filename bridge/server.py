@@ -1,5 +1,5 @@
 """
-Pet Feeder Bridge v2.0 - Serial-to-Web Bridge
+Pet Feeder Bridge v1.0 - Serial-to-Web Bridge
 ===============================================
 Features:
   - Real-time distance streaming from Arduino
@@ -24,13 +24,26 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
 import serial
+import serial.tools.list_ports
 
 # ---- CONFIGURATION ----
-SERIAL_PORT = "COM5"
 BAUD_RATE = 115200
 WEB_PORT = 8080
 LOG_DIR = Path(__file__).parent.parent / "logs"
 CSV_FILE = LOG_DIR / "feeder_data.csv"
+
+
+def find_arduino():
+    """Auto-detect Arduino/CH340 serial port."""
+    keywords = ["CH340", "Arduino", "USB-SERIAL", "USB Serial"]
+    for port in serial.tools.list_ports.comports():
+        desc = port.description or ""
+        mfg = port.manufacturer or ""
+        for kw in keywords:
+            if kw.lower() in desc.lower() or kw.lower() in mfg.lower():
+                print(f"[BRIDGE] Found device: {desc} on {port.device}")
+                return port.device
+    return None
 
 # ---- GLOBAL STATE ----
 state = {
@@ -287,17 +300,22 @@ def main():
     global serial_port
 
     print("=" * 50)
-    print("  AUTOMATIC PET FEEDER v2.0 - Web Dashboard Bridge")
+    print("  AUTOMATIC PET FEEDER v1.0 - Web Dashboard Bridge")
     print("=" * 50)
 
     init_csv()
 
-    print(f"[BRIDGE] Opening {SERIAL_PORT} at {BAUD_RATE} baud...")
+    serial_port_path = find_arduino()
+    if not serial_port_path:
+        print("[BRIDGE] ERROR: No Arduino/CH340 found. Check USB connection.")
+        sys.exit(1)
+
+    print(f"[BRIDGE] Opening {serial_port_path} at {BAUD_RATE} baud...")
     try:
-        serial_port = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0.1)
+        serial_port = serial.Serial(serial_port_path, BAUD_RATE, timeout=0.1)
         time.sleep(2)
     except serial.SerialException as e:
-        print(f"[BRIDGE] ERROR: Cannot open {SERIAL_PORT}: {e}")
+        print(f"[BRIDGE] ERROR: Cannot open {serial_port_path}: {e}")
         sys.exit(1)
 
     t = threading.Thread(target=serial_reader, daemon=True)

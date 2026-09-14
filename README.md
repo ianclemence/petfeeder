@@ -1,5 +1,7 @@
 # Automatic Pet Feeder
 
+> [README ภาษาไทย](README_TH.md) | [คู่มือติดตั้งภาษาไทย](SETUP_TH.md) | [English Setup Guide](SETUP.md)
+
 An Arduino-based automatic pet feeder that uses an ultrasonic distance sensor to detect when a pet is nearby and automatically dispenses food by opening a servo-controlled gate.
 
 **No timer** — purely proximity-triggered with a cooldown to prevent overfeeding.

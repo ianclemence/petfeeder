@@ -1,5 +1,5 @@
 /*
- * Automatic Pet Feeder v2.0 - Arduino Firmware
+ * Automatic Pet Feeder v1.0 - Arduino Firmware
  * ==============================================
  * Features:
  *   - Adjustable detection threshold (via serial command)
@@ -115,7 +115,7 @@ void setup() {
   feederServo.attach(SERVO_PIN);
   feederServo.write(CLOSE_ANGLE);
 
-  Serial.println("BOOT:PetFeeder v2.0");
+  Serial.println("BOOT:PetFeeder v1.0");
   Serial.println("ACK:READY");
 }
 
